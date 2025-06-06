@@ -17,36 +17,59 @@ const AgentManagement = ({ adminId }: AgentManagementProps) => {
     mobileNumber: "",
     password: "",
   });
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
 
   const agents = useQuery(api.agents.getAllAgents) || [];
   const createAgent = useMutation(api.agents.createAgent);
+  const updateAgent = useMutation(api.agents.updateAgent);
   const deleteAgent = useMutation(api.agents.deleteAgent);
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      email: "",
+      countryCode: "+1",
+      mobileNumber: "",
+      password: "",
+    });
+    setEditingAgentId(null);
+    setShowForm(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.name || !formData.email || !formData.mobileNumber || !formData.password) {
-      toast.error("Please fill in all fields");
+
+    if (!formData.name || !formData.email || !formData.mobileNumber) {
+      toast.error("Please fill in all required fields");
       return;
     }
 
     try {
-      await createAgent({
-        ...formData,
-        createdBy: adminId as Id<"adminUsers">,
-      });
-      
-      toast.success("Agent created successfully!");
-      setFormData({
-        name: "",
-        email: "",
-        countryCode: "+1",
-        mobileNumber: "",
-        password: "",
-      });
-      setShowForm(false);
+      if (editingAgentId) {
+        // Update existing agent
+        await updateAgent({
+          agentId: editingAgentId as Id<"agents">,
+          name: formData.name,
+          email: formData.email,
+          countryCode: formData.countryCode,
+          mobileNumber: formData.mobileNumber,
+        });
+        toast.success("Agent updated successfully!");
+      } else {
+        // Create new agent
+        if (!formData.password) {
+          toast.error("Please provide a password for new agent");
+          return;
+        }
+        await createAgent({
+          ...formData,
+          createdBy: adminId as Id<"adminUsers">,
+        });
+        toast.success("Agent created successfully!");
+      }
+      resetForm();
     } catch (error: any) {
-      toast.error(error.message || "Failed to create agent");
+      toast.error(error.message || (editingAgentId ? "Failed to update agent" : "Failed to create agent"));
     }
   };
 
@@ -59,6 +82,18 @@ const AgentManagement = ({ adminId }: AgentManagementProps) => {
         toast.error("Failed to delete agent");
       }
     }
+  };
+
+  const handleEdit = (agent: typeof agents[0]) => {
+    setFormData({
+      name: agent.name,
+      email: agent.email,
+      countryCode: agent.countryCode,
+      mobileNumber: agent.mobileNumber,
+      password: "",
+    });
+    setEditingAgentId(agent.id);
+    setShowForm(true);
   };
 
   const countryCodes = [
@@ -74,17 +109,22 @@ const AgentManagement = ({ adminId }: AgentManagementProps) => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900">Agent Management</h2>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            resetForm();
+            setShowForm(!showForm);
+          }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
         >
-          {showForm ? "Cancel" : "Add Agent"}
+          {showForm ? "Cancel" : editingAgentId ? "Edit Agent" : "Add Agent"}
         </button>
       </div>
 
-      {/* Add Agent Form */}
+      {/* Add/Edit Agent Form */}
       {showForm && (
         <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Add New Agent</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">
+            {editingAgentId ? "Edit Agent" : "Add New Agent"}
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -131,21 +171,23 @@ const AgentManagement = ({ adminId }: AgentManagementProps) => {
                   onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
                 />
               </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Password</label>
-                <input
-                  type="password"
-                  required
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                />
-              </div>
+              {!editingAgentId && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">Password</label>
+                  <input
+                    type="password"
+                    required
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={resetForm}
                 className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
@@ -154,7 +196,7 @@ const AgentManagement = ({ adminId }: AgentManagementProps) => {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-blue-700"
               >
-                Create Agent
+                {editingAgentId ? "Update Agent" : "Create Agent"}
               </button>
             </div>
           </form>
@@ -208,6 +250,12 @@ const AgentManagement = ({ adminId }: AgentManagementProps) => {
                       {new Date(agent.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => handleEdit(agent)}
+                        className="text-blue-600 hover:text-blue-900 mr-6"
+                      >
+                        Edit
+                      </button>
                       <button
                         onClick={() => handleDelete(agent.id)}
                         className="text-red-600 hover:text-red-900"
